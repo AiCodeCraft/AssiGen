@@ -1,1 +1,23 @@
-
+{
+  "environment": {
+    "cache_dir": "/tmp/ai_assistant_cache",
+    "max_temp_files": 100,
+    "cleanup_interval": 3600
+  },
+  "security": {
+    "mask_api_keys": true,
+    "allowed_file_types": [".txt", ".pdf", ".csv"],
+    "max_file_size_mb": 10
+  },
+  "models": {
+    "default_provider": "openai",
+    "fallback_provider": "deepseek",
+    "temperature": 0.7,
+    "max_tokens": 1000
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "max_files": 5
+  }
+}
