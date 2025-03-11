@@ -119,7 +119,7 @@ import json""",
         conn.close()
         return history"""
     },
-    api_integration = {
+    "api_integration": {
     "imports": """import requests
      import json""",
     "functions": """def call_external_api(url, method="GET", headers=None, data=None, params=None):
