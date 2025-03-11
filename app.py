@@ -2,6 +2,13 @@
 # Only for academic research! 
 import os
 config = load_config()
+config = {
+    "environment": {
+        "cache_dir": os.getenv("CACHE_DIR", "/tmp/default_cache"),
+        "max_temp_files": int(os.getenv("MAX_TEMP_FILES", "50"))
+    },
+    # ... andere Werte
+}
 # Matplotlib Cache-Konfiguration für Huggingface Spaces
 os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib-cache'
 os.makedirs(os.environ['MPLCONFIGDIR'], exist_ok=True)
