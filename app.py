@@ -439,32 +439,32 @@ def generate_php_code(params: Dict[str, Any], api_key: str) -> str:
         }"""
 
     if "memory" in params["features"]:
-        feature_methods += """
-        private $db;
+    feature_methods += """
+    private $db;
 
-        public function initializeMemory($dbPath = "memory.sqlite") {
-            $this->db = new SQLite3($dbPath);
-            $this->db->exec("CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT,
-                timestamp TEXT,
-                user_input TEXT,
-                assistant_response TEXT
-            )");
-        }
+    public function initializeMemory($dbPath = "memory.sqlite") {
+        $this->db = new SQLite3($dbPath);
+        $this->db->exec("CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            timestamp TEXT,
+            user_input TEXT,
+            assistant_response TEXT
+        )");
+    }
 
-        public function askWithMemory($prompt, $sessionId, $systemPrompt = "You are a helpful AI assistant.", $temperature = 0.7) {
-            $response = $this->ask($prompt, $systemPrompt, $temperature);
+    public function askWithMemory($prompt, $sessionId, $systemPrompt = "You are a helpful AI assistant.", $temperature = 0.7) {
+        $response = $this->ask($prompt, $systemPrompt, $temperature);
 
-            $stmt = $this->db->prepare("INSERT INTO conversations (session_id, timestamp, user_input, assistant_response) 
-                                        VALUES (:session_id, datetime('now'), :user_input, :assistant_response)");
-            $stmt->bindValue(':session_id', $sessionId, SQLITE3_TEXT);
-            $stmt->bindValue(':user_input', $prompt, SQLITE3_TEXT);
-            $stmt->bindValue(':assistant_response', $response, SQLITE3_TEXT);
-            $stmt->execute();
+        $stmt = $this->db->prepare("INSERT INTO conversations (session_id, timestamp, user_input, assistant_response) 
+                                    VALUES (:session_id, datetime('now'), :user_input, :assistant_response)");
+        $stmt->bindValue(':session_id', $sessionId, SQLITE3_TEXT);
+        $stmt->bindValue(':user_input', $prompt, SQLITE3_TEXT);
+        $stmt->bindValue(':assistant_response', $response, SQLITE3_TEXT);
+        $stmt->execute();
 
-            return $response;
-        }"""
+        return $response;
+    }"""
 
     # Bestimme den API-Endpunkt basierend auf der API
     api_endpoint = params["api"]
