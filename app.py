@@ -9,6 +9,9 @@ config = {
     },
     # ... andere Werte
 }
+# Verwende die Config-Werte
+os.environ["MPLCONFIGDIR"] = config["environment"]["cache_dir"]
+MAX_FILE_SIZE = config["security"]["max_file_size_mb"] * 1024 * 1024
 # Matplotlib Cache-Konfiguration für Huggingface Spaces
 os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib-cache'
 os.makedirs(os.environ['MPLCONFIGDIR'], exist_ok=True)
