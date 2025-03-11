@@ -224,139 +224,6 @@ def generate_code(task_input: str, api_key: str) -> str:
     else:
         return f"Die Programmiersprache {params['language']} wird noch nicht unterstützt."
 
-def generate_python_code(params: Dict[str, Any], api_key: str) -> str:
-    """Generate Python code for the AI assistant."""
-    api_info = AI_MODELS[params["api"]]
-    
-    imports = [
-        "import os",
-        "import sys",
-        "import json",
-        api_info["import"]
-    ]
-    
-    setup_code = [
-        "# API-Setup",
-        f"api_key = os.environ.get('API_KEY', '{api_key[:3]}...')"  # Zeige nur einen Teil des API-Keys
-    ]
-    
-    assistant_class = [
-        "class AIAssistant:",
-        "    def __init__(self, api_key):",
-        "        self.api_key = api_key",
-        f"        {api_info['setup'].replace('api_key', 'self.api_key')}",
-        "",
-        "    def ask(self, user_input, system_prompt=\"You are a helpful AI assistant.\", temperature=0.7):",
-        f"        {api_info['call'].replace('{model}', params['model']).replace('{temperature}', 'temperature')}"
-    ]
-    
-    # Füge Feature-spezifischen Code hinzu
-    for feature in params["features"]:
-        if feature in FEATURE_HANDLERS:
-            imports.append(FEATURE_HANDLERS[feature]["imports"])
-            assistant_class.append("")
-            assistant_class.append(f"    # {feature.replace('_', ' ').title()} Methods")
-            
-            # Indent feature functions correctly
-            feature_funcs = FEATURE_HANDLERS[feature]["functions"].split("\n")
-            if feature != "memory":  # Memory ist eine Klasse, daher anders behandeln
-                feature_funcs = ["    " + line for line in feature_funcs]
-                assistant_class.extend(feature_funcs)
-            else:
-                # Füge Memory-Integration zur Assistenten-Klasse hinzu
-                assistant_class.append("    def initialize_memory(self, db_path=\"memory.db\"):")
-                assistant_class.append("        self.memory = ConversationMemory(db_path)")
-                assistant_class.append("")
-                assistant_class.append("    def ask_with_memory(self, user_input, session_id, system_prompt=\"You are a helpful AI assistant.\", temperature=0.7):")
-                assistant_class.append("        response = self.ask(user_input, system_prompt, temperature)")
-                assistant_class.append("        self.memory.save_interaction(session_id, user_input, response)")
-                assistant_class.append("        return response")
-    
-    # Generiere den Haupt-Code basierend auf UI-Anforderungen
-    main_code = ["# Hauptfunktion"]
-    
-    if params["web_ui"]:
-        imports.append("import gradio as gr")
-        main_code.extend([
-            "def create_web_interface():",
-            "    assistant = AIAssistant(api_key)",
-            "",
-            "    def process_query(query, history):",
-            "        response = assistant.ask(query)",
-            "        history.append((query, response))",
-            "        return \"\", history",
-            "",
-            "    with gr.Blocks() as demo:",
-            "        gr.Markdown(f\"## AI Assistant mit {params['model']}\")",
-            "",
-            "        chatbot = gr.Chatbot()",
-            "        msg = gr.Textbox()",
-            "        clear = gr.Button(\"Clear\")",
-            "",
-            "        msg.submit(process_query, [msg, chatbot], [msg, chatbot])",
-            "        clear.click(lambda: None, None, chatbot, queue=False)",
-            "",
-            "    demo.launch()",
-            ""
-        ])
-    
-    if params["cli"]:
-        main_code.extend([
-            "def run_cli():",
-            "    assistant = AIAssistant(api_key)",
-            "    print(f\"AI Assistant mit {params['model']} bereit. Zum Beenden 'exit' eingeben.\")",
-            "",
-            "    while True:",
-            "        user_input = input(\"\\nFrage: \")",
-            "        if user_input.lower() in ['exit', 'quit', 'q']:",
-            "            print(\"Auf Wiedersehen!\")",
-            "            break",
-            "",
-            "        response = assistant.ask(user_input)",
-            "        print(f\"\\nAssistent: {response}\")",
-            ""
-        ])
-    
-    main_code.append("if __name__ == \"__main__\":")
-    if params["web_ui"] and params["cli"]:
-        main_code.append("    if len(sys.argv) > 1 and sys.argv[1] == '--cli':")
-        main_code.append("        run_cli()")
-        main_code.append("    else:")
-        main_code.append("        create_web_interface()")
-    elif params["web_ui"]:
-        main_code.append("    create_web_interface()")
-    elif params["cli"]:
-        main_code.append("    run_cli()")
-    else:
-        main_code.append("    assistant = AIAssistant(api_key)")
-        main_code.append("    response = assistant.ask(\"Hallo, wie geht es dir?\")")
-        main_code.append("    print(f\"Antwort: {response}\")")
-    
-    # Füge Memory-Klassendefinition hinzu, wenn erforderlich
-    memory_class = []
-    if "memory" in params["features"]:
-        memory_class = FEATURE_HANDLERS["memory"]["functions"].split("\n")
-    
-    # Kombiniere alles zum endgültigen Code
-    all_sections = [
-        "# Generierter AI Assistant",
-        f"# API: {params['api'].upper()}",
-        f"# Modell: {params['model']}",
-        f"# Features: {', '.join(params['features']) if params['features'] else 'Keine zusätzlichen Features'}",
-        "",
-        "\n".join(list(dict.fromkeys(imports))),  # Entferne Duplikate
-        "",
-        "\n".join(setup_code),
-        "",
-        "\n".join(memory_class) if memory_class else "",
-        "",
-        "\n".join(assistant_class),
-        "",
-        "\n".join(main_code)
-    ]
-    
-    return "\n".join(all_sections)
-
 def generate_php_code(params: Dict[str, Any], api_key: str) -> str:
     """Generate PHP code for the AI assistant."""
     # PHP-Code-Generierung (vereinfachte Version)
@@ -439,32 +306,32 @@ def generate_php_code(params: Dict[str, Any], api_key: str) -> str:
         }"""
 
     if "memory" in params["features"]:
-    feature_methods += """
-    private $db;
+        feature_methods += """
+        private $db;
 
-    public function initializeMemory($dbPath = "memory.sqlite") {
-        $this->db = new SQLite3($dbPath);
-        $this->db->exec("CREATE TABLE IF NOT EXISTS conversations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
-            timestamp TEXT,
-            user_input TEXT,
-            assistant_response TEXT
-        )");
-    }
+        public function initializeMemory($dbPath = "memory.sqlite") {
+            $this->db = new SQLite3($dbPath);
+            $this->db->exec("CREATE TABLE IF NOT EXISTS conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT,
+                timestamp TEXT,
+                user_input TEXT,
+                assistant_response TEXT
+            )");
+        }
 
-    public function askWithMemory($prompt, $sessionId, $systemPrompt = "You are a helpful AI assistant.", $temperature = 0.7) {
-        $response = $this->ask($prompt, $systemPrompt, $temperature);
+        public function askWithMemory($prompt, $sessionId, $systemPrompt = "You are a helpful AI assistant.", $temperature = 0.7) {
+            $response = $this->ask($prompt, $systemPrompt, $temperature);
 
-        $stmt = $this->db->prepare("INSERT INTO conversations (session_id, timestamp, user_input, assistant_response) 
-                                    VALUES (:session_id, datetime('now'), :user_input, :assistant_response)");
-        $stmt->bindValue(':session_id', $sessionId, SQLITE3_TEXT);
-        $stmt->bindValue(':user_input', $prompt, SQLITE3_TEXT);
-        $stmt->bindValue(':assistant_response', $response, SQLITE3_TEXT);
-        $stmt->execute();
+            $stmt = $this->db->prepare("INSERT INTO conversations (session_id, timestamp, user_input, assistant_response) 
+                                        VALUES (:session_id, datetime('now'), :user_input, :assistant_response)");
+            $stmt->bindValue(':session_id', $sessionId, SQLITE3_TEXT);
+            $stmt->bindValue(':user_input', $prompt, SQLITE3_TEXT);
+            $stmt->bindValue(':assistant_response', $response, SQLITE3_TEXT);
+            $stmt->execute();
 
-        return $response;
-    }"""
+            return $response;
+        }"""
 
     # Bestimme den API-Endpunkt basierend auf der API
     api_endpoint = params["api"]
