@@ -1,8 +1,8 @@
 import gradio as gr
+from jinja2 import Template
 import os
 import json
 from typing import Dict, List, Any
-from jinja2 import Template
 
 # Konfigurationen für verschiedene Modelle und APIs
 AI_MODELS = {
@@ -40,8 +40,8 @@ AI_MODELS = {
     },
     "anthropic": {
         "models": ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku"],
-        "import": "import anthropic",
-        "setup": "client = anthropic.Anthropic(api_key=api_key)",
+        "import": "from anthropic import Anthropic",
+        "setup": "client = Anthropic(api_key=api_key)",
         "call": """response = client.messages.create(
             model="{model}",
             system="{system_prompt}",
@@ -120,11 +120,12 @@ import json""",
         return history"""
     },
     "api_integration": {
-    "imports": """import requests
-    import json"""
-    "functions": """def call_external_api(url, method="GET", headers=None, data=None, params=None):"""
+        "imports": """import requests
+import json""",
+        "functions": """def call_external_api(url, method="GET", headers=None, data=None, params=None):
+    """Call an external API with the specified parameters."""
     headers = headers or {}
-
+    
     if method.upper() == "GET":
         response = requests.get(url, headers=headers, params=params)
     elif method.upper() == "POST":
@@ -135,7 +136,7 @@ import json""",
         response = requests.delete(url, headers=headers, params=params)
     else:
         raise ValueError(f"Unsupported HTTP method: {method}")
-
+        
     if response.status_code >= 200 and response.status_code < 300:
         try:
             return response.json()
@@ -147,8 +148,7 @@ import json""",
             "status_code": response.status_code,
             "message": response.text
         }"""
-}
-
+    }
 }
 
 def parse_tasks(task_input: str) -> Dict[str, Any]:
@@ -224,114 +224,247 @@ def generate_code(task_input: str, api_key: str) -> str:
     else:
         return f"Die Programmiersprache {params['language']} wird noch nicht unterstützt."
 
+def generate_python_code(params: Dict[str, Any], api_key: str) -> str:
+    """Generate Python code for the AI assistant."""
+    api_info = AI_MODELS[params["api"]]
+    
+    imports = [
+        "import os",
+        "import sys",
+        "import json",
+        api_info["import"]
+    ]
+    
+    setup_code = [
+        "# API-Setup",
+        f"api_key = os.environ.get('API_KEY', '{api_key[:3]}...')"  # Zeige nur einen Teil des API-Keys
+    ]
+    
+    assistant_class = [
+        "class AIAssistant:",
+        "    def __init__(self, api_key):",
+        "        self.api_key = api_key",
+        f"        {api_info['setup'].replace('api_key', 'self.api_key')}",
+        "",
+        "    def ask(self, user_input, system_prompt=\"You are a helpful AI assistant.\", temperature=0.7):",
+        f"        {api_info['call'].replace('{model}', params['model']).replace('{temperature}', 'temperature')}"
+    ]
+    
+    # Füge Feature-spezifischen Code hinzu
+    for feature in params["features"]:
+        if feature in FEATURE_HANDLERS:
+            imports.append(FEATURE_HANDLERS[feature]["imports"])
+            assistant_class.append("")
+            assistant_class.append(f"    # {feature.replace('_', ' ').title()} Methods")
+            
+            # Indent feature functions correctly
+            feature_funcs = FEATURE_HANDLERS[feature]["functions"].split("\n")
+            if feature != "memory":  # Memory ist eine Klasse, daher anders behandeln
+                feature_funcs = ["    " + line for line in feature_funcs]
+                assistant_class.extend(feature_funcs)
+            else:
+                # Füge Memory-Integration zur Assistenten-Klasse hinzu
+                assistant_class.append("    def initialize_memory(self, db_path=\"memory.db\"):")
+                assistant_class.append("        self.memory = ConversationMemory(db_path)")
+                assistant_class.append("")
+                assistant_class.append("    def ask_with_memory(self, user_input, session_id, system_prompt=\"You are a helpful AI assistant.\", temperature=0.7):")
+                assistant_class.append("        response = self.ask(user_input, system_prompt, temperature)")
+                assistant_class.append("        self.memory.save_interaction(session_id, user_input, response)")
+                assistant_class.append("        return response")
+    
+    # Generiere den Haupt-Code basierend auf UI-Anforderungen
+    main_code = ["# Hauptfunktion"]
+    
+    if params["web_ui"]:
+        imports.append("import gradio as gr")
+        main_code.extend([
+            "def create_web_interface():",
+            "    assistant = AIAssistant(api_key)",
+            "",
+            "    def process_query(query, history):",
+            "        response = assistant.ask(query)",
+            "        history.append((query, response))",
+            "        return \"\", history",
+            "",
+            "    with gr.Blocks() as demo:",
+            "        gr.Markdown(f\"## AI Assistant mit {params['model']}\")",
+            "",
+            "        chatbot = gr.Chatbot()",
+            "        msg = gr.Textbox()",
+            "        clear = gr.Button(\"Clear\")",
+            "",
+            "        msg.submit(process_query, [msg, chatbot], [msg, chatbot])",
+            "        clear.click(lambda: None, None, chatbot, queue=False)",
+            "",
+            "    demo.launch()",
+            ""
+        ])
+    
+    if params["cli"]:
+        main_code.extend([
+            "def run_cli():",
+            "    assistant = AIAssistant(api_key)",
+            "    print(f\"AI Assistant mit {params['model']} bereit. Zum Beenden 'exit' eingeben.\")",
+            "",
+            "    while True:",
+            "        user_input = input(\"\\nFrage: \")",
+            "        if user_input.lower() in ['exit', 'quit', 'q']:",
+            "            print(\"Auf Wiedersehen!\")",
+            "            break",
+            "",
+            "        response = assistant.ask(user_input)",
+            "        print(f\"\\nAssistent: {response}\")",
+            ""
+        ])
+    
+    main_code.append("if __name__ == \"__main__\":")
+    if params["web_ui"] and params["cli"]:
+        main_code.append("    if len(sys.argv) > 1 and sys.argv[1] == '--cli':")
+        main_code.append("        run_cli()")
+        main_code.append("    else:")
+        main_code.append("        create_web_interface()")
+    elif params["web_ui"]:
+        main_code.append("    create_web_interface()")
+    elif params["cli"]:
+        main_code.append("    run_cli()")
+    else:
+        main_code.append("    assistant = AIAssistant(api_key)")
+        main_code.append("    response = assistant.ask(\"Hallo, wie geht es dir?\")")
+        main_code.append("    print(f\"Antwort: {response}\")")
+    
+    # Füge Memory-Klassendefinition hinzu, wenn erforderlich
+    memory_class = []
+    if "memory" in params["features"]:
+        memory_class = FEATURE_HANDLERS["memory"]["functions"].split("\n")
+    
+    # Kombiniere alles zum endgültigen Code
+    all_sections = [
+        "# Generierter AI Assistant",
+        f"# API: {params['api'].upper()}",
+        f"# Modell: {params['model']}",
+        f"# Features: {', '.join(params['features']) if params['features'] else 'Keine zusätzlichen Features'}",
+        "",
+        "\n".join(list(dict.fromkeys(imports))),  # Entferne Duplikate
+        "",
+        "\n".join(setup_code),
+        "",
+        "\n".join(memory_class) if memory_class else "",
+        "",
+        "\n".join(assistant_class),
+        "",
+        "\n".join(main_code)
+    ]
+    
+    return "\n".join(all_sections)
+
 def generate_php_code(params: Dict[str, Any], api_key: str) -> str:
     """Generate PHP code for the AI assistant."""
     # PHP-Code-Generierung (vereinfachte Version)
     php_template = """<?php
-    // Generierter AI Assistant
-    // API: {api}
-    // Modell: {model}
-    // Features: {features}
+// Generierter AI Assistant
+// API: {api}
+// Modell: {model}
+// Features: {features}
 
-    class AIAssistant {{
-        private $api_key;
-        private $model;
-
-        public function __construct($api_key, $model) {{
-            $this->api_key = $api_key;
-            $this->model = $model;
-        }}
-
-        public function ask($prompt, $system_prompt = "You are a helpful AI assistant.", $temperature = 0.7) {{
-            $url = "https://api.{api_endpoint}/v1/chat/completions";
-
-            $headers = [
-                "Content-Type: application/json",
-                "Authorization: Bearer " . $this->api_key
-            ];
-
-            $data = [
-                "model" => $this->model,
-                "messages" => [
-                    ["role" => "system", "content" => $system_prompt],
-                    ["role" => "user", "content" => $prompt]
-                ],
-                "temperature" => $temperature
-            ];
-
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-
-            $response = curl_exec($ch);
-            curl_close($ch);
-
-            $response_data = json_decode($response, true);
-            return $response_data["choices"][0]["message"]["content"];
-        }}
-
-        {feature_methods}
+class AIAssistant {{
+    private $api_key;
+    private $model;
+    
+    public function __construct($api_key, $model) {{
+        $this->api_key = $api_key;
+        $this->model = $model;
     }}
+    
+    public function ask($prompt, $system_prompt = "You are a helpful AI assistant.", $temperature = 0.7) {{
+        $url = "https://api.{api_endpoint}/v1/chat/completions";
+        
+        $headers = [
+            "Content-Type: application/json",
+            "Authorization: Bearer " . $this->api_key
+        ];
+        
+        $data = [
+            "model" => $this->model,
+            "messages" => [
+                ["role" => "system", "content" => $system_prompt],
+                ["role" => "user", "content" => $prompt]
+            ],
+            "temperature" => $temperature
+        ];
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        
+        $response = curl_exec($ch);
+        curl_close($ch);
+        
+        $response_data = json_decode($response, true);
+        return $response_data["choices"][0]["message"]["content"];
+    }}
+    
+    {feature_methods}
+}}
 
-    // Hauptcode
-    $api_key = '{api_key_preview}';
-    $assistant = new AIAssistant($api_key, '{model}');
+// Hauptcode
+$api_key = '{api_key_preview}';
+$assistant = new AIAssistant($api_key, '{model}');
 
-    {main_code}
-    ?>"""
+{main_code}
+?>"""
 
     feature_methods = ""
     if "file_handling" in params["features"]:
         feature_methods += """
-        public function handleUploadedFile($file) {
-            $tempDir = sys_get_temp_dir();
-            $filename = basename($file["name"]);
-            $filepath = $tempDir . "/" . $filename;
-
-            if (move_uploaded_file($file["tmp_name"], $filepath)) {
-                return $filepath;
-            }
-
+    public function handleUploadedFile($file) {
+        $tempDir = sys_get_temp_dir();
+        $filename = basename($file["name"]);
+        $filepath = $tempDir . "/" . $filename;
+        
+        if (move_uploaded_file($file["tmp_name"], $filepath)) {
+            return $filepath;
+        }
+        
+        return null;
+    }
+    
+    public function readFileContent($filepath, $maxSize = 100000) {
+        if (!file_exists($filepath)) {
             return null;
         }
-
-        public function readFileContent($filepath, $maxSize = 100000) {
-            if (!file_exists($filepath)) {
-                return null;
-            }
-
-            return file_get_contents($filepath, false, null, 0, $maxSize);
-        }"""
+        
+        return file_get_contents($filepath, false, null, 0, $maxSize);
+    }"""
 
     if "memory" in params["features"]:
         feature_methods += """
-        private $db;
-
-        public function initializeMemory($dbPath = "memory.sqlite") {
-            $this->db = new SQLite3($dbPath);
-            $this->db->exec("CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT,
-                timestamp TEXT,
-                user_input TEXT,
-                assistant_response TEXT
-            )");
-        }
-
-        public function askWithMemory($prompt, $sessionId, $systemPrompt = "You are a helpful AI assistant.", $temperature = 0.7) {
-            $response = $this->ask($prompt, $systemPrompt, $temperature);
-
-            $stmt = $this->db->prepare("INSERT INTO conversations (session_id, timestamp, user_input, assistant_response) 
-                                        VALUES (:session_id, datetime('now'), :user_input, :assistant_response)");
-            $stmt->bindValue(':session_id', $sessionId, SQLITE3_TEXT);
-            $stmt->bindValue(':user_input', $prompt, SQLITE3_TEXT);
-            $stmt->bindValue(':assistant_response', $response, SQLITE3_TEXT);
-            $stmt->execute();
-
-            return $response;
-        }"""
+    private $db;
+    
+    public function initializeMemory($dbPath = "memory.sqlite") {
+        $this->db = new SQLite3($dbPath);
+        $this->db->exec("CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            timestamp TEXT,
+            user_input TEXT,
+            assistant_response TEXT
+        )");
+    }
+    
+    public function askWithMemory($prompt, $sessionId, $systemPrompt = "You are a helpful AI assistant.", $temperature = 0.7) {
+        $response = $this->ask($prompt, $systemPrompt, $temperature);
+        
+        $stmt = $this->db->prepare("INSERT INTO conversations (session_id, timestamp, user_input, assistant_response) 
+                                    VALUES (:session_id, datetime('now'), :user_input, :assistant_response)");
+        $stmt->bindValue(':session_id', $sessionId, SQLITE3_TEXT);
+        $stmt->bindValue(':user_input', $prompt, SQLITE3_TEXT);
+        $stmt->bindValue(':assistant_response', $response, SQLITE3_TEXT);
+        $stmt->execute();
+        
+        return $response;
+    }"""
 
     # Bestimme den API-Endpunkt basierend auf der API
     api_endpoint = params["api"]
@@ -346,112 +479,113 @@ def generate_php_code(params: Dict[str, Any], api_key: str) -> str:
     main_code = ""
     if params["web_ui"]:
         main_code += """
-    // Web-UI
-    if ($_SERVER["REQUEST_METHOD"] == "POST") {
-        $user_input = $_POST["user_input"] ?? "";
-
-        if (!empty($user_input)) {
-            $response = $assistant->ask($user_input);
-            echo json_encode(["response" => $response]);
-            exit;
-        }
+// Web-UI
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    $user_input = $_POST["user_input"] ?? "";
+    
+    if (!empty($user_input)) {
+        $response = $assistant->ask($user_input);
+        echo json_encode(["response" => $response]);
+        exit;
     }
+}
 
-    ?>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>AI Assistant</title>
-        <style>
-            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-            .chat-container { border: 1px solid #ddd; border-radius: 5px; padding: 10px; height: 400px; overflow-y: auto; margin-bottom: 10px; }
-            .user-message { background-color: #e6f7ff; padding: 8px; border-radius: 5px; margin-bottom: 10px; }
-            .assistant-message { background-color: #f2f2f2; padding: 8px; border-radius: 5px; margin-bottom: 10px; }
-            input[type="text"] { width: 80%; padding: 8px; }
-            button { padding: 8px 15px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        </style>
-    </head>
-    <body>
-        <h1>AI Assistant mit <?php echo htmlspecialchars('{model}'); ?></h1>
+?>
 
-        <div class="chat-container" id="chatContainer"></div>
-
-        <div>
-            <input type="text" id="userInput" placeholder="Stellen Sie eine Frage...">
-            <button onclick="sendMessage()">Senden</button>
-        </div>
-
-        <script>
-            function sendMessage() {
-                const userInput = document.getElementById('userInput').value;
-                if (!userInput) return;
-
-                // Nachricht des Benutzers anzeigen
-                addMessage('user', userInput);
-                document.getElementById('userInput').value = '';
-
-                // Anfrage an den Server senden
-                fetch(window.location.href, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: 'user_input=' + encodeURIComponent(userInput)
-                })
-                .then(response => response.json())
-                .then(data => {
-                    addMessage('assistant', data.response);
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    addMessage('assistant', 'Es ist ein Fehler aufgetreten.');
-                });
-            }
-
-            function addMessage(role, content) {
-                const chatContainer = document.getElementById('chatContainer');
-                const messageDiv = document.createElement('div');
-                messageDiv.className = role + '-message';
-                messageDiv.textContent = content;
-                chatContainer.appendChild(messageDiv);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-            }
-
-            // Event-Listener für die Enter-Taste
-            document.getElementById('userInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Assistant</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .chat-container { border: 1px solid #ddd; border-radius: 5px; padding: 10px; height: 400px; overflow-y: auto; margin-bottom: 10px; }
+        .user-message { background-color: #e6f7ff; padding: 8px; border-radius: 5px; margin-bottom: 10px; }
+        .assistant-message { background-color: #f2f2f2; padding: 8px; border-radius: 5px; margin-bottom: 10px; }
+        input[type="text"] { width: 80%; padding: 8px; }
+        button { padding: 8px 15px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>AI Assistant mit <?php echo htmlspecialchars('{model}'); ?></h1>
+    
+    <div class="chat-container" id="chatContainer"></div>
+    
+    <div>
+        <input type="text" id="userInput" placeholder="Stellen Sie eine Frage...">
+        <button onclick="sendMessage()">Senden</button>
+    </div>
+    
+    <script>
+        function sendMessage() {
+            const userInput = document.getElementById('userInput').value;
+            if (!userInput) return;
+            
+            // Nachricht des Benutzers anzeigen
+            addMessage('user', userInput);
+            document.getElementById('userInput').value = '';
+            
+            // Anfrage an den Server senden
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'user_input=' + encodeURIComponent(userInput)
+            })
+            .then(response => response.json())
+            .then(data => {
+                addMessage('assistant', data.response);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                addMessage('assistant', 'Es ist ein Fehler aufgetreten.');
             });
-        </script>
-    </body>
-    </html>
+        }
+        
+        function addMessage(role, content) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = role + '-message';
+            messageDiv.textContent = content;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+        
+        // Event-Listener für die Enter-Taste
+        document.getElementById('userInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
 
-    <?php
-    // Verhindere weitere Ausführung
-    exit;"""
+<?php
+// Verhindere weitere Ausführung
+exit;"""
     elif params["cli"]:
         main_code += """
-    // CLI-Modus
-    echo "AI Assistant mit {model} bereit. Zum Beenden 'exit' eingeben.\n";
+// CLI-Modus
+echo "AI Assistant mit {model} bereit. Zum Beenden 'exit' eingeben.\n";
 
-    while (true) {
-        echo "\nFrage: ";
-        $userInput = trim(fgets(STDIN));
-
-        if (in_array(strtolower($userInput), ['exit', 'quit', 'q'])) {
-            echo "Auf Wiedersehen!\n";
-            break;
-        }
-
-        $response = $assistant->ask($userInput);
-        echo "\nAssistent: " . $response . "\n";
-    }"""
+while (true) {
+    echo "\nFrage: ";
+    $userInput = trim(fgets(STDIN));
+    
+    if (in_array(strtolower($userInput), ['exit', 'quit', 'q'])) {
+        echo "Auf Wiedersehen!\n";
+        break;
+    }
+    
+    $response = $assistant->ask($userInput);
+    echo "\nAssistent: " . $response . "\n";
+}"""
     else:
         main_code += """
-    // Einfacher Test
-    $response = $assistant->ask("Hallo, wie geht es dir?");
-    echo "Antwort: " . $response . "\n";"""
+// Einfacher Test
+$response = $assistant->ask("Hallo, wie geht es dir?");
+echo "Antwort: " . $response . "\n";"""
 
     return php_template.format(
         api=params["api"].upper(),
@@ -465,7 +599,7 @@ def generate_php_code(params: Dict[str, Any], api_key: str) -> str:
 
 def generate_js_code(params: Dict[str, Any], api_key: str) -> str:
     """Generate JavaScript code for the AI assistant."""
-    # JavaScript-Code-Generierung (vereinfachte Version)
+    # JS-Code-Generierung (vereinfachte Version)
     js_template = """// Generierter AI Assistant
 // API: {api}
 // Modell: {model}
@@ -606,18 +740,6 @@ class AIAssistant {{
         resolve(data.slice(0, maxSize));
       });
     });
-  }"""
-    
-    if "memory" in params["features"]:
-        feature_methods += """
-  initializeMemory(dbPath = "memory.db") {
-    this.memory = new ConversationMemory(dbPath);
-  }
-  
-  async askWithMemory(userInput, sessionId, systemPrompt = "You are a helpful AI assistant.", temperature = 0.7) {
-    const response = await this.ask(userInput, systemPrompt, temperature);
-    await this.memory.saveInteraction(sessionId, userInput, response);
-    return response;
   }"""
     
     # Memory-Klasse wenn erforderlich
