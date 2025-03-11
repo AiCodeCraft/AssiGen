@@ -452,6 +452,7 @@ def generate_php_code(params: Dict[str, Any], api_key: str) -> str:
             assistant_response TEXT
         )");
     }
+    
 
     public function askWithMemory($prompt, $sessionId, $systemPrompt = "You are a helpful AI assistant.", $temperature = 0.7) {
         $response = $this->ask($prompt, $systemPrompt, $temperature);
