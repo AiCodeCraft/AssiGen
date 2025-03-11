@@ -1,7 +1,7 @@
 # Copyright Volkan Sah Kücükbudak 
 # Only for academic research! 
 import os
-
+config = load_config()
 # Matplotlib Cache-Konfiguration für Huggingface Spaces
 os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib-cache'
 os.makedirs(os.environ['MPLCONFIGDIR'], exist_ok=True)
