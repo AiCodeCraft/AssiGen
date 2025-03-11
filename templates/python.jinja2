@@ -1,0 +1,35 @@
+# Generierter {{ params.language|capitalize }} Code für {{ params.api|upper }} ({{ params.model }})
+# Features: {{ params.features|join(', ') }}
+
+import os
+from pathlib import Path
+
+{% if 'file_handling' in params.features %}
+# File Handling Module
+class FileManager:
+    def __init__(self):
+        self.temp_dir = Path("{{ temp_dir }}")
+        
+    def save_file(self, file):
+        # Implementierung hier
+{% endif %}
+
+{% if hf_space %}
+# Huggingface Space-spezifische Konfiguration
+os.environ['HF_HOME'] = '/tmp/huggingface'
+{% endif %}
+
+{{ model_config.import }}
+
+class AIAssistant:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        {{ model_config.setup|replace('api_key', 'self.api_key') }}
+    
+    def ask(self, prompt):
+        {{ model_config.call|format(
+            model=params.model,
+            system_prompt="You are helpful",
+            user_input="prompt",
+            temperature=0.7
+        ) }}
