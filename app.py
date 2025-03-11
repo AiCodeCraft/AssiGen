@@ -443,13 +443,12 @@ $assistant = new AIAssistant($api_key, '{model}');
     private $db;
     
     public function initializeMemory($dbPath = "memory.sqlite") {
-        $this->db = new SQLite3($dbPath);
         $this->db->exec("CREATE TABLE IF NOT EXISTS conversations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT,
-            timestamp TEXT,
-            user_input TEXT,
-            assistant_response TEXT
+        INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        timestamp TEXT,
+        user_input TEXT,
+        assistant_response TEXT
         )");
     }
     
