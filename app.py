@@ -443,14 +443,15 @@ $assistant = new AIAssistant($api_key, '{model}');
     private $db;
     
     public function initializeMemory($dbPath = "memory.sqlite") {
-        $this->db->exec("CREATE TABLE IF NOT EXISTS conversations (
-        INTEGER PRIMARY KEY AUTOINCREMENT,
+    $this->db = new SQLite3($dbPath);
+    $this->db->exec("CREATE TABLE IF NOT EXISTS conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id TEXT,
         timestamp TEXT,
         user_input TEXT,
         assistant_response TEXT
-        )");
-    }
+    )");
+}
     
     public function askWithMemory($prompt, $sessionId, $systemPrompt = "You are a helpful AI assistant.", $temperature = 0.7) {
         $response = $this->ask($prompt, $systemPrompt, $temperature);
