@@ -121,7 +121,7 @@ import json""",
     },
     "api_integration": {
     "imports": """import requests
-     import json""",
+    import json"""
     "functions": """def call_external_api(url, method="GET", headers=None, data=None, params=None):
     headers = headers or {}
 
